@@ -1,0 +1,138 @@
+title: SaaS Payment Flow
+scope: |
+  Subscribe / cancel / refund flows backed by Stripe. Covers webhook ingestion,
+  client-initiated mutations, and the reconciliation between Stripe state and
+  application state.
+
+trust_boundaries:
+  - id: TB1
+    crosses: Anonymous internet → Edge
+    trust: none
+  - id: TB2
+    crosses: Edge → API
+    trust: session cookie verified, JWT-derived
+  - id: TB3
+    crosses: API → DB
+    trust: parameterized queries; RLS forced
+  - id: TB4
+    crosses: Stripe → API webhooks
+    trust: signed events only; replay-detected via ledger
+
+threats:
+  - id: T-001
+    stride: spoofing
+    title: Forged webhook events
+    description: An attacker without signing-secret access POSTs a fake event to credit a paid plan.
+    severity: high
+    mitre: [T1190]
+    mitigation: |
+      Verify Stripe-Signature header on every event using the per-environment
+      signing secret. Failed verification → 401, no DB write.
+    status: implemented
+
+  - id: T-002
+    stride: spoofing
+    title: Stripe customer-ID spoof
+    description: Client supplies stripe_customer_id directly in subscribe call.
+    severity: medium
+    mitigation: Server resolves customer ID from session, never from request body.
+    status: implemented
+
+  - id: T-003
+    stride: tampering
+    title: Race two concurrent /subscribe requests
+    description: User clicks twice or the network retries; two subscriptions get billed.
+    severity: medium
+    mitre: [T1078]
+    mitigation: |
+      Idempotency keys on every payment-creating call. DB unique constraint on
+      (tenant_id, stripe_subscription_id). Stripe's own idempotency layer.
+    status: implemented
+
+  - id: T-004
+    stride: tampering
+    title: Modify amount in client request before /subscribe
+    description: Client sends arbitrary amount field hoping server uses it.
+    severity: high
+    mitigation: Amount is server-derived from plan_id; client cannot supply amount.
+    status: implemented
+
+  - id: T-005
+    stride: repudiation
+    title: User claims a refund was unauthorized
+    severity: low
+    mitigation: |
+      Audit log records actor, action, target, before/after. Stripe ledger is
+      the independent third-party record.
+    status: implemented
+
+  - id: T-006
+    stride: information_disclosure
+    title: Stripe webhook payloads logged with PII
+    description: Default logging captures full webhook bodies with email and partial card data.
+    severity: medium
+    mitigation: |
+      Redact known-sensitive keys before logging. Log event ID and type only;
+      look up details from Stripe by ID when needed for debugging.
+    status: implemented
+
+  - id: T-007
+    stride: denial_of_service
+    title: Webhook flood
+    description: Attacker floods /webhooks/stripe with unsigned events, exhausting workers.
+    severity: low
+    mitigation: |
+      Edge rate-limit on /webhooks/stripe; signature verification is fast and
+      rejects unsigned traffic before any DB hit.
+    status: implemented
+
+  - id: T-008
+    stride: elevation_of_privilege
+    title: Replay successful webhook for another tenant
+    description: Attacker captures a legitimate webhook for Tenant A, replays at our endpoint hoping to credit their Tenant B.
+    severity: medium
+    mitigation: |
+      Signed-event ledger keyed by Stripe event ID. Replay → no-op. Webhook handler
+      derives tenant from event payload, never from URL or headers.
+    status: implemented
+
+  - id: T-009
+    stride: tampering
+    title: Cancellation in UI never reaches Stripe
+    description: User clicks cancel; we mark cancelled locally but the Stripe API call failed silently. We continue to bill them.
+    severity: high
+    mitigation: |
+      Cancellation state transition only after Stripe ack. UI optimistic updates
+      rolled back on failure. Daily reconciliation job compares local subscription
+      state to Stripe and alerts on drift.
+    status: implemented
+
+  - id: T-010
+    stride: information_disclosure
+    title: Refund webhook leaks customer email to wrong tenant via misrouting
+    description: Multi-tenant misrouting based on stripe_customer_id collision.
+    severity: critical
+    mitigation: |
+      Webhook handler enforces (stripe_customer_id, tenant_id) join. Any event
+      with a customer ID not owned by exactly one tenant is rejected and alerted.
+    status: implemented
+
+  - id: T-011
+    stride: tampering
+    title: Stale webhook secret accepted after rotation
+    description: Old secret continues to verify events for too long after rotation.
+    severity: medium
+    mitigation: |
+      Stripe supports two active signing secrets; old one is removed within 24h
+      of rotation in the rotation runbook.
+    status: implemented
+
+  - id: T-012
+    stride: information_disclosure
+    title: Stripe API key written to logs by SDK error path
+    description: SDK exception includes Authorization header in some error frames.
+    severity: high
+    mitigation: |
+      Pin Stripe SDK to a version that scrubs Authorization. Application's error
+      logger redacts any 'sk_*' prefixed string in stack traces.
+    status: implemented
