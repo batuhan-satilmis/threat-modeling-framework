@@ -1,5 +1,9 @@
 # threat-modeling-framework
 
+[![CI](https://github.com/batuhan-satilmis/threat-modeling-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/batuhan-satilmis/threat-modeling-framework/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 > STRIDE worksheets, MITRE ATT&CK mappings, and a small Python tool to convert YAML threat models into Markdown risk registers. Built to make threat modeling a 30-minute habit, not a quarterly event.
 
 ```
