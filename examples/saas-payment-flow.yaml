@@ -136,3 +136,64 @@ threats:
       Pin Stripe SDK to a version that scrubs Authorization. Application's error
       logger redacts any 'sk_*' prefixed string in stack traces.
     status: implemented
+
+  - id: T-013
+    stride: denial_of_service
+    title: Card-testing abuse via /subscribe endpoint
+    description: |
+      Attacker scripts the public /subscribe endpoint with thousands of stolen
+      card numbers to identify which ones still authorize. Each failed attempt
+      costs Stripe radar fees and risks the merchant being flagged for
+      excessive disputes; a successful test then funds card-fraud downstream.
+      Unlike T-007 (webhook flood), this hits the legitimate API path with
+      well-formed requests and bypasses signature-based filtering.
+    severity: high
+    mitre: [T1499, T1110]
+    mitigation: |
+      Stripe Radar with the card-testing rules enabled; per-IP and per-fingerprint
+      rate-limit on /subscribe; CAPTCHA after N failed authorisations in a window;
+      reject unauthenticated subscribe attempts (require an established account)
+      and exponential back-off on consecutive declines.
+    status: in_progress
+
+  - id: T-014
+    stride: tampering
+    title: Webhook signature timestamp tolerance not enforced
+    description: |
+      The Stripe-Signature header is `t=<ts>,v1=<sig>`. The Stripe SDK's
+      constructEvent enforces a default 300-second tolerance against the
+      timestamp to defeat replay even with a valid signature. If a developer
+      parses the header manually, or passes tolerance=0 / a multi-day value,
+      an attacker who exfiltrates a single legitimate event (proxy log,
+      mirrored bucket, leaked staging dump) can replay it indefinitely against
+      production. Distinct from T-008 — that one is cross-tenant; this one is
+      single-tenant temporal replay.
+    severity: high
+    mitre: [T1565, T1199]
+    mitigation: |
+      Always go through stripe.webhooks.constructEvent with the default
+      tolerance; never hand-roll signature parsing. Add a unit test that asserts
+      a 6-minute-old payload with a valid signature is rejected. Pair with the
+      signed-event ledger (T-008) so even within tolerance an event can only
+      apply once.
+    status: implemented
+
+  - id: T-015
+    stride: tampering
+    title: Coupon redemption race grants stacked discounts
+    description: |
+      A single-use promo code is enforced by a SELECT-then-INSERT in /apply-coupon.
+      An attacker fires N concurrent requests; all N SELECTs see redeemed=0,
+      all N INSERTs succeed, and the user lands with N-fold stacked credit.
+      The same shape applies to first-month-free trial codes and friend-referral
+      bounties.
+    severity: medium
+    mitre: [T1565]
+    mitigation: |
+      Make redemption atomic: UNIQUE constraint on (code_id, user_id) plus
+      INSERT … ON CONFLICT DO NOTHING, and only honour the credit if the insert
+      affected exactly one row. Wrap the Stripe coupon application in the same
+      transaction so a failed insert rolls back the Stripe call (or use a
+      compensating delete). Audit log every redemption with attempt count and
+      IP for forensics.
+    status: in_progress
