@@ -38,6 +38,7 @@ templates/
   pattern-payment-flow.md       Payment / billing focus
   pattern-data-export.md        Data egress / DLP focus
   pattern-file-upload.md        File / media handling focus
+  pattern-ci-cd-pipeline.md     CI/CD + supply-chain (T1195 / T1199) focus
 examples/
   saas-payment-flow.yaml        Example YAML threat model
   saas-payment-flow.md          Rendered output (so reviewers can preview)
