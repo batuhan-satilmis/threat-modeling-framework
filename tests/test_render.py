@@ -26,7 +26,7 @@ def _load_model() -> ThreatModel:
 def test_example_loads_and_validates():
     model = _load_model()
     assert model.title == "SaaS Payment Flow"
-    assert len(model.threats) == 15
+    assert len(model.threats) == 16
     assert model.validate() == []
 
 
@@ -108,3 +108,27 @@ def test_summary_counts_match_threats():
         assert f"**{sev.title()}**: {n}" in summary_block, (
             f"summary missing {sev}={n}; got:\n{summary_block}"
         )
+
+
+def test_portal_session_bearer_url_threat_present():
+    """T-016: the Stripe billing-portal session URL is a bearer token. The
+    common leak surfaces (Referer, JSON body echo, access logs, support-desk
+    paste) map cleanly to elevation_of_privilege — anyone who obtains the URL
+    can act on the customer's billing without authenticating to our app.
+    Distinct from T-002 (customer-ID spoof, server-side) and T-008 (webhook
+    replay across tenants, server-to-server)."""
+    model = _load_model()
+    t016 = next((t for t in model.threats if t.id == "T-016"), None)
+    assert t016 is not None
+    assert t016.stride == "elevation_of_privilege"
+    assert t016.severity == "high"
+    # Description must call out at least one concrete leak path.
+    desc = t016.description.lower()
+    assert "referer" in desc or "referrer" in desc or "json body" in desc
+    # Mitigation must name the two structural fixes (302 redirect + referrer policy).
+    mit = t016.mitigation.lower()
+    assert "302" in mit or "redirect" in mit
+    assert "referrer-policy" in mit or "referrer policy" in mit or "no-referrer" in mit
+    # MITRE tag must include T1539 (Steal Web Session Cookie), the closest
+    # ATT&CK technique for a URL that behaves like a session token.
+    assert "T1539" in t016.mitre

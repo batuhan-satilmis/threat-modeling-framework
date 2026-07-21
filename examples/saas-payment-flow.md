@@ -18,7 +18,7 @@ application state.
 ## Risk register summary
 
 - 🔴 **Critical**: 1
-- 🟠 **High**: 6
+- 🟠 **High**: 7
 - 🟡 **Medium**: 6
 - 🔵 **Low**: 2
 
@@ -67,4 +67,5 @@ application state.
 
 | # | Severity | Title | Mitigation | Status | MITRE |
 |---|---|---|---|---|---|
+| T-016 | 🟠 High | Billing-portal session URL leaks via Referer or logs | Never return the portal URL in a JSON body. The /billing/portal route creates the session server-side and issues a 302 Location redirect on the same response, with Cache-Control: no-store, private and Referrer-Policy: no-referrer set. Mint a fresh session on every hit; do not memoize the URL. Validate return_url against an allow-list of first-party origins so the merchant app can't be turned into an open redirect for the portal round-trip. Strip the `?session=BPS_…` query variant from access logs at the reverse-proxy layer (redact anything matching /^BPS_[A-Za-z0-9]+$/). Alert on a portal session accessed from a country or user-agent that hasn't been seen on the customer's account in the last 30 days. | in_progress | T1539, T1552.001 |
 | T-008 | 🟡 Medium | Replay successful webhook for another tenant | Signed-event ledger keyed by Stripe event ID. Replay → no-op. Webhook handler derives tenant from event payload, never from URL or headers. | implemented |  |

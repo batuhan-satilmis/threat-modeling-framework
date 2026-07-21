@@ -197,3 +197,39 @@ threats:
       compensating delete). Audit log every redemption with attempt count and
       IP for forensics.
     status: in_progress
+
+  - id: T-016
+    stride: elevation_of_privilege
+    title: Billing-portal session URL leaks via Referer or logs
+    description: |
+      stripe.billingPortal.sessions.create returns a URL of the form
+      https://billing.stripe.com/session/BPS_… — that URL is a bearer token.
+      Anyone who possesses it during the short session window can cancel
+      subscriptions, swap the default payment method, or download invoices
+      for the customer, with no additional authentication step against our
+      app. Common leak paths in a live SaaS: the merchant app returns the
+      URL in a JSON body (ends up in browser history, service-worker cache,
+      Sentry breadcrumbs, front-end analytics events); the app 302-redirects
+      with the URL in Location but does not set Referrer-Policy, so the
+      first navigation off of billing.stripe.com leaks the URL to third
+      parties via Referer; a support agent pastes the URL into a Zendesk
+      ticket and a second agent opens it a few minutes later. Distinct
+      from T-002 (spoofing a Stripe customer ID at the server) and from
+      T-008 (server-to-server webhook replay across tenants) — this one
+      is a client-facing bearer credential that our app is minting on
+      the customer's behalf.
+    severity: high
+    mitre: [T1539, T1552.001]
+    mitigation: |
+      Never return the portal URL in a JSON body. The /billing/portal route
+      creates the session server-side and issues a 302 Location redirect on
+      the same response, with Cache-Control: no-store, private and
+      Referrer-Policy: no-referrer set. Mint a fresh session on every hit;
+      do not memoize the URL. Validate return_url against an allow-list of
+      first-party origins so the merchant app can't be turned into an open
+      redirect for the portal round-trip. Strip the `?session=BPS_…` query
+      variant from access logs at the reverse-proxy layer (redact anything
+      matching /^BPS_[A-Za-z0-9]+$/). Alert on a portal session accessed
+      from a country or user-agent that hasn't been seen on the customer's
+      account in the last 30 days.
+    status: in_progress
